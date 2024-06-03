@@ -1,0 +1,122 @@
+---
+#version: "3.8"
+name: ${COMPOSE_PROJECT_NAME}
+services:
+# *******************************************
+# WORDPRESS (website)
+# reverse-proxy port: 127.0.0.1:65180 (HTTP)
+# *******************************************
+  wordpress:
+    image: wordpress:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_wp-app
+    hostname: ${WP_INSTANCE}_wp-app
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:65180:80"
+    volumes:
+      - ./data/wordpress:/var/www/html   # Wordpress data dir
+      - ./config/wordpress_php-conf.ini:/usr/local/etc/php/conf.d/conf.ini   # PHP config file
+      - ./config/apache2_security.conf:/etc/apache2/conf-enabled/security.conf # Apache2 config file
+      - ./log/wordpress_php-error.log:/var/log/php/error.log   # PHP error log
+      - ./log/wordpress_apache2-error.log:/var/log/apache2/error.log    # Apache2 error log
+      - ./log/wordpress_apache2-access.log:/var/log/apache2/access.log   # Apache2 access log
+    environment:
+      TZ: Europe/Vienna
+      WORDPRESS_DB_HOST: mariadb
+      WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME}
+      WORDPRESS_DB_USER: ${WORDPRESS_DB_USER}
+      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD}
+    depends_on:
+      - mariadb
+      - redis
+
+# *******************************************
+# WORDPRESS (CLI)
+# *******************************************
+  wpcli:
+    image: wordpress:cli
+    container_name: ${COMPOSE_PROJECT_NAME}_wp-cli
+    hostname: ${WP_INSTANCE}_wp-cli
+    volumes:
+      #- ./config/wordpress_php-conf.ini:/usr/local/etc/php/conf.d/conf.ini
+      - ./data/wordpress:/var/www/html   # Wordpress data dir
+    user: "33" # default wpcli user, username "xfs" with the ID "33"
+    #entrypoint: wp # comand executed every start
+    tty: true  # Enable terminal interaction
+    stdin_open: true  # Keep STDIN open even if not attached
+    command: /bin/bash
+    environment:
+      TZ: Europe/Vienna
+      HOME: /tmp
+      WORDPRESS_DB_HOST: mariadb
+      WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME}
+      WORDPRESS_DB_USER: ${WORDPRESS_DB_USER}
+      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD}
+    depends_on:
+      - mariadb
+      - redis
+      - wordpress
+
+# *******************************************
+# REDIS
+# *******************************************
+  redis:
+    image: redis:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_redis
+    hostname: ${WP_INSTANCE}_redis
+    restart: unless-stopped
+    expose:
+      - 6379
+    volumes:
+      - ./dаta/redis:/data   # Redis data dir
+      - ./config/redis_redis.conf:/usr/local/etc/redis/redis.conf   # Redis config
+      - ./log/redis_server.log:/var/log/redis/server.log
+    command: redis-server /usr/local/etc/redis/redis.conf   # Enable additional redis config
+    environment:
+      TZ: Europe/Vienna
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+# *******************************************
+# PHPMYADMI
+# reverse-proxy port: 127.0.0.1:65181 (HTTP)
+# *******************************************
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_pma
+    hostname: ${WP_INSTANCE}_pma
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:65181:80"
+    environment:
+      TZ: Europe/Vienna
+      PMA_HOST: mariadb
+      PMA_PORT: 3306
+      PMA_ARBITRARY: 1
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      UPLOAD_LIMIT: 100M
+    depends_on:
+      - mariadb
+
+# *******************************************
+# DATABASE
+# *******************************************
+  mariadb:
+    image: mariadb:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_mariadb
+    hostname: ${WP_INSTANCE}_mariadb
+    restart: unless-stopped
+    volumes:
+      #- ./wp-data:/docker-entrypoint-initdb.d
+      - ./data/mariadb:/var/lib/mysql   # Mariadb data dir
+      - ./log/mariadb_server.log:/var/log/mysql/server.log   # Mariadb server log
+      - ./config/mariadb_my.cnf:/etc/mysql/my.cnf   # Mariadb config file
+    environment:
+      TZ: Europe/Vienna
+      MYSQL_DATABASE: ${WORDPRESS_DB_NAME}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${WORDPRESS_DB_USER}
+      MYSQL_PASSWORD: ${WORDPRESS_DB_PASSWORD}
+    command:
+    - '--character-set-server=utf8mb4'
+    - '--collation-server=utf8mb4_unicode_520_ci'
